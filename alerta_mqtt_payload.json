@@ -1,0 +1,16 @@
+{
+    "timestamp": "2026-07-21T16:18:50.479471",
+    "dron_id": "UAV-TESIS-01",
+    "tipo_alerta": "HOTSPOT_DETECTADO",
+    "datos_termicos": {
+        "temperatura_maxima_c": 70.0,
+        "temperatura_mediana_c": 32.62,
+        "umbral_disparo_c": 47.62
+    },
+    "posicion_imagen": {
+        "x": 440,
+        "y": 100,
+        "ancho": 60,
+        "alto": 60
+    }
+}
