@@ -3,11 +3,18 @@ import cv2
 import json
 from datetime import datetime
 import paho.mqtt.client as mqtt
+import time
+
+
 # --- MÓDULO 1: ADQUISICIÓN DE DATOS ---
-def simular_lectura_sensor():
-    """Simula la captura de datos del MLX90640 y añade un hotspot."""
+def simular_lectura_sensor(probabilidad_falla=0.1):
+    """Simula la captura de datos. A veces inyecta un hotspot, a veces no."""
     matriz = np.random.uniform(low=30.0, high=35.0, size=(24, 32))
-    matriz[5:8, 22:25] = 70.0  # Hotspot inyectado artificialmente
+    
+    # Hay un 10% de probabilidad de que aparezca una falla en este frame
+    if np.random.rand() < probabilidad_falla:
+        matriz[5:8, 22:25] = 70.0  
+        
     return matriz
 
 # --- MÓDULO 2: PROCESAMIENTO VISUAL ---
@@ -88,29 +95,65 @@ def guardar_telemetria(anomalias, temp_max, mediana, umbral):
     with open(archivo, "w") as f:
         f.write(json.dumps(payload, indent=4))
 
+def enviar_heartbeat(mediana):
+    """Envía un pulso de vida indicando que el sistema está operando bien."""
+    payload = {
+        "timestamp": datetime.now().isoformat(),
+        "dron_id": "UAV-TESIS-01",
+        "tipo_alerta": "HEARTBEAT",
+        "estado": "SISTEMA_OK",
+        "temperatura_promedio_panel": round(mediana, 2)
+    }
+    
+    broker = "test.mosquitto.org"
+    topic = "tesis/dron_inspeccion/alertas"
+    
+    try:
+        cliente_mqtt = mqtt.Client()
+        cliente_mqtt.connect(broker, 1883, 60)
+        cliente_mqtt.publish(topic, json.dumps(payload))
+        cliente_mqtt.disconnect()
+        print(f"-> [💙 HEARTBEAT] Pulso enviado. Temp normal: {mediana:.1f} C")
+    except Exception as e:
+        pass # Si falla el latido, lo ignoramos silenciosamente para no frenar el vuelo
 
 def main():
     print("Iniciando Sistema Edge AI de Inspección...")
+    print("Presiona la tecla 'q' en la ventana de video para apagar el dron.")
     
-    # 1. Adquisición
-    matriz_termica = simular_lectura_sensor()
+    ultimo_latido = 0
+    intervalo_latido = 5 # Enviaremos un latido cada 5 segundos
     
-    # 2. Visión
-    imagen_base, temp_max = procesar_visualizacion(matriz_termica)
-    
-    # 3. Detección
-    imagen_final, anomalias, mediana, umbral = detectar_hotspots(matriz_termica, imagen_base, temp_max)
-    
-    # 4. Telemetría
-    if anomalias:
-        print(f"¡ALERTA! Se detectó un hotspot.")
-        guardar_telemetria(anomalias, temp_max, mediana, umbral)
-    
-    # 5. Salida por pantalla
-    cv2.imshow("Plataforma de Inspeccion - Tesis", imagen_final)
-    cv2.waitKey(0)
+    while True: # BUCLE INFINITO (Simulando el vuelo)
+        
+        # 1. Adquisición continua
+        matriz_termica = simular_lectura_sensor()
+        
+        # 2. Visión y Detección
+        imagen_base, temp_max = procesar_visualizacion(matriz_termica)
+        imagen_final, anomalias, mediana, umbral = detectar_hotspots(matriz_termica, imagen_base, temp_max)
+        
+        # 3. Telemetría de Fallas (Solo si detecta algo)
+        if anomalias:
+            print(f"\n¡ALERTA! Hotspot detectado a {temp_max:.1f} C")
+            guardar_telemetria(anomalias, temp_max, mediana, umbral)
+            
+        # 4. Lógica de Heartbeat (Latido de Salud)
+        tiempo_actual = time.time()
+        if tiempo_actual - ultimo_latido >= intervalo_latido:
+            enviar_heartbeat(mediana)
+            ultimo_latido = tiempo_actual # Reiniciamos el cronómetro
+            
+        # 5. Salida por pantalla (Video)
+        cv2.imshow("Plataforma de Inspeccion - Tesis", imagen_final)
+        
+        # El waitKey(100) hace que espere 100 milisegundos (10 FPS aprox)
+        # Si presionas 'q', rompe el bucle y apaga el sistema
+        if cv2.waitKey(1000) & 0xFF == ord('q'):
+            print("Apagando motores y sistema de visión...")
+            break
+
     cv2.destroyAllWindows()
 
-# Punto de entrada estándar en Python
 if __name__ == "__main__":
     main()
